@@ -1,0 +1,369 @@
+---
+title: "Limb Regeneration Figures"
+output:
+  html_document:
+    df_print: paged
+    code_folding: hide
+  html_notebook: default
+  pdf_document: default
+---
+
+This code accompanies the paper "Xenopus limb regeneration is restricted by extrinsic cues inhibitory to specialised wound epidermis formation, Aztekin, Hiscock et al." (submitted). 
+
+## Import scripts, data and annotation
+
+Import scripts.
+
+```{r, include=FALSE}
+source("scripts.R")
+```
+
+Import data and annotation.
+
+```{r}
+counts <- readMM("countsMatrix.mtx")
+genes <- read.csv("genes.csv", header = F)$V1
+cells<- read.csv("cells.csv", header = F)$V1
+rownames(counts) <- genes
+colnames(counts) <- cells
+meta <- as.data.frame(read.csv("meta.csv"))
+labels <- as.data.frame(read.csv("labels.csv"))
+annotation <- as.data.frame(read.csv("annotation.csv"))
+load("supp.RData")
+```
+
+Normalize counts matrix
+
+```{r}
+meta$umi <- Matrix::colSums(counts)
+countn <- normalize(counts)
+```
+
+## Visualisations
+
+Full map
+
+```{r}
+plotCells(meta$x,meta$y,meta$cluster, meta$col,size = 0.3)
+```
+
+Full map with labels
+
+```{r, fig.width = 20}
+clusterAnnotation <- data.frame(names = annotation$name[order(annotation$order)], cols = annotation$col[order(annotation$order)])
+plotAnnotation(meta,clusterAnnotation)
+```
+
+Selected samples: ST52 control
+
+```{r}
+plotSample(meta,which(meta$val == all[1]), title = all[1], size = 0.5)
+```
+
+Selected samples: ST52 5 dpa
+
+```{r}
+plotSample(meta,which(meta$val == all[4]), title = all[4], size = 0.5)
+```
+
+Mesenchyme only
+
+```{r, warning=FALSE}
+mMes <- which(meta$group %in% "mesenchymal")
+plotCells(meta$x[mMes],meta$y[mMes],meta$cluster[mMes], meta$col[mMes],size = 0.6, lims = c(0,10,-2.5,7.5))
+```
+
+Distal mesenchyme factor plotted in mesenchyme.
+
+```{r, warning=FALSE}
+plotArbitrary(meta[mMes,],factors$H["distal mesenchyme (sall4)",mMes],"distal mesenchyme (sall4)",  size = 0.2, lims = c(0,10,-2.5,7.5))
+```
+
+Basal epidermal clusters
+
+```{r, warning=FALSE}
+mTp63 <- which(meta$group %in% "Tp63+ epidermal")
+plotCells(meta$x[mTp63],meta$y[mTp63],meta$cluster[mTp63], meta$col[mTp63],size = 0.6, lims = c(-7.5,0,0,7.5))
+```
+
+Basal epidermal cells across conditions
+
+```{r, warning=FALSE}
+plotSampleGrid(meta,meta$val,amputation,size = 0.5, name = "2B", lims = c(-7.5,0,0,7.5))
+```
+
+All cells across all conditions, with replicates colour coded.
+
+```{r}
+samplePlots <- list()
+  for(val in c(all,"ST52 proximal limb", "ST52 intact limb")){
+    p <- plotSample(meta, which(meta$val == val), size = 0.5, return = TRUE, mode = "batch", title = val)
+    samplePlots[[val]] <- p + theme(plot.margin=unit(rep(0.001,4), "cm")) + theme(panel.border = element_blank())
+  }
+grid.arrange(grobs = samplePlots,ncol = 3)
+```
+
+## Gene expression visualizations
+
+Fgf8.L expression on the UMAP
+
+```{r, warning=FALSE}
+plotGene(meta,countn,"fgf8.L", size = 0.2, lims = c(-7.5,0,0,7.5))
+```
+
+Ligand expression in AER across conditions
+
+```{r, warning=FALSE}
+dotplot(countn, genes = heatmapGenes[["aer"]], cells = which(meta$cluster %in% c("AER")), norm = "max", conditionList = all[1:5], condition = meta$val, title = "AER", aspect.ratio = 4, ySize = 8, xSize = 8, dot.scale = 5)
+```
+
+Inhibitor expression across selected cell types.
+
+```{r, warning=FALSE}
+inhibitors <- c("nog.L", "nog.S","chrdl1.L", "chrdl1.S","chrdl2.L", "chrdl2.S","frzb.L", "frzb.S", "sfrp1.L", "sfrp1.S","sfrp3.L", "sfrp3.S","sfrp5.L", "sfrp5.S","dkk1.L", "dkk1.S")
+
+group <- c("Tp63+ epidermal","mesenchymal")
+id <- annotation$id[which(annotation$group %in% group)]
+conditionList <- annotation$name[id][order(annotation$order[id], decreasing = F)]
+gene_markers <- unique(unlist(markers[id][order(annotation$order[id], decreasing = F)]))
+markers.L<-sapply(tolower((gene_markers)),function(x) paste0(x,".L"))
+M <- dotplot(countn,genes = inhibitors,cells = which(meta$group == group), condition = meta$cluster, conditionList = conditionList, dot.scale = 4, aspect.ratio = 0.6, xSize = 8, ySize = 10, title = "")
+```
+
+Fibroblast 1 gene expression
+
+```{r, warning=FALSE}
+dotplot(countn, genes = heatmapGenes[["increase"]], cells = which(meta$cluster == "Fibroblast 1"), norm = "max", conditionList = all, condition = meta$val, title = "Fibroblast 1", aspect.ratio = 5, ySize = 8, xSize = 8, dot.scale = 4)
+
+dotplot(countn, genes = heatmapGenes[["same"]], cells = which(meta$cluster == "Fibroblast 1"), norm = "max", conditionList = all, condition = meta$val, title = "Fibroblast 1", aspect.ratio = 5, ySize = 8, xSize = 8, dot.scale = 3.5)
+
+
+newMarkers <- higherGenesXenify(countn,c("dpt","htra3","prrx1"),cells = which(meta$cluster %in% c("Fibroblast 1","Fibroblast 2","Fibroblast 3")), condition = meta$cluster, conditionList = which(meta$cluster %in% c("Fibroblast 1","Fibroblast 2","Fibroblast 3")))
+
+dotplot(countn, genes = newMarkers, cells = which(meta$cluster %in% c("Fibroblast 1","Fibroblast 2","Fibroblast 3")), norm = "max", condition = meta$cluster, aspect.ratio = 1, ySize = 15, xSize = 15, dot.scale = 15)
+
+```
+
+Expression of signalling pathway targets in epidermal cells and AER.
+
+```{r, warning=FALSE}
+dotplot(countn, genes = heatmapGenes[["targets"]], cells = which(meta$group == "Tp63+ epidermal"), norm = "max", conditionList = all, condition = meta$val, title = "Epidermis", aspect.ratio = 5, ySize = 8, xSize = 8, dot.scale = 3)
+
+dotplot(countn, genes = heatmapGenes[["targets"]], cells = which(meta$cluster %in% c("AER", "AER2")), norm = "max", conditionList = all[1:5], condition = meta$val, title = "AER", aspect.ratio = 5, ySize = 8, xSize = 8, dot.scale = 3)
+
+```
+
+
+
+## Abundance analysis across conditions
+
+Mesenchyme
+
+```{r}
+metaM <- meta[which(meta$group == "mesenchymal"),]
+abundances <- table(paste0(metaM$cluster), paste0(metaM$val))
+abundances <- abundances[order(annotation$order[match(rownames(abundances),annotation$name)]),match(all,colnames(abundances))]
+colours <- clusterCols[match(rownames(abundances),clusterCols$names),]
+dat <- melt(abundances)
+p <- ggplot(dat = dat, aes(fill = Var1, x = Var2, y = value)) +
+  geom_bar(position="fill", stat="identity") + theme_classic() +
+  scale_fill_manual(values = paste0(colours$cols), labels= factor(colours$names), name = "") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), axis.title = element_blank(), aspect.ratio = 0.75) 
+
+  p <- p + scale_y_continuous(expand = c(0, 0))
+  p
+```
+
+Muscle
+
+```{r}
+metaMuscle <- meta[which(meta$group == "muscle"),]
+abundances <- table(paste0(metaMuscle$cluster), paste0(metaMuscle$val))
+abundances <- abundances[order(annotation$order[match(rownames(abundances),annotation$name)]),match(all,colnames(abundances))]
+
+colours <- clusterCols[match(rownames(abundances),clusterCols$names),]
+dat <- melt(abundances)
+p <- ggplot(dat = dat, aes(fill = Var1, x = Var2, y = value)) +
+  geom_bar(position="fill", stat="identity") + theme_classic() +
+  scale_fill_manual(values = paste0(colours$cols), labels= factor(colours$names), name = "") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+  p <- p + scale_y_continuous(expand = c(0, 0))
+  p
+```
+
+Basal epidermis
+
+```{r}
+
+metaEpi <- meta[which(meta$group == "Tp63+ epidermal"),]
+abundances <- table(paste0(metaEpi$cluster), paste0(metaEpi$val))
+abundances <- abundances[order(annotation$order[match(rownames(abundances),annotation$name)]),match(all,colnames(abundances))]
+
+colours <- clusterCols[match(rownames(abundances),clusterCols$names),]
+dat <- melt(abundances)
+p <- ggplot(dat = dat, aes(fill = Var1, x = Var2, y = value)) +
+  geom_bar(position="fill", stat="identity") + theme_classic() +
+  scale_fill_manual(values = paste0(colours$cols), labels= factor(colours$names), name = "") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+  p <- p + scale_y_continuous(expand = c(0, 0))
+  
+  
+p
+
+```
+
+## Marker gene dotplots
+
+Group 1
+
+```{r, warning=FALSE}
+group <- c("mesenchymal","muscle")
+id <- annotation$id[which(annotation$group %in% group)]
+conditionList <- rev(annotation$name[id][order(annotation$order[id], decreasing = F)])
+gene_markers <- unique(unlist(markers[id][order(annotation$order[id], decreasing = F)]))
+markers.L<-sapply(tolower((gene_markers)),function(x) paste0(x,".L"))
+newMarkers <- higherGenesXenify(countn,gene_markers,cells = which(meta$group == group), condition = meta$cluster, conditionList = conditionList)
+M <- dotplot(countn,genes = newMarkers,cells = which(meta$group == group), condition = meta$cluster, conditionList = conditionList, dot.scale = 1, aspect.ratio = 4, xSize = 4, ySize =4, title = "", xAngle = 270, yAngle = 0)
+```
+
+Group 2
+
+```{r, warning=FALSE}
+group <- c("Tp63+ epidermal","Tp63- epidermal")
+id <- annotation$id[which(annotation$group %in% group)]
+conditionList <- rev(annotation$name[id][order(annotation$order[id], decreasing = F)])
+gene_markers <- unique(unlist(markers[id][order(annotation$order[id], decreasing = F)]))
+markers.L<-sapply(tolower((gene_markers)),function(x) paste0(x,".L"))
+newMarkers <- higherGenesXenify(countn,gene_markers,cells = which(meta$group == group), condition = meta$cluster, conditionList = conditionList)
+M <- dotplot(countn,genes = newMarkers,cells = which(meta$group == group), condition = meta$cluster, conditionList = conditionList, dot.scale = 1.5, aspect.ratio = 2, xSize = 6, ySize = 6, title = "",xAngle = 270)
+```
+
+Group 3
+
+```{r, warning=FALSE}
+group <- c("blood","immune","other")
+id <- annotation$id[which(annotation$group %in% group)]
+conditionList <- rev(annotation$name[id][order(annotation$order[id], decreasing = F)])
+gene_markers <- unique(unlist(markers[id][order(annotation$order[id], decreasing = F)]))
+markers.L<-sapply(tolower((gene_markers)),function(x) paste0(x,".L"))
+newMarkers <- higherGenesXenify(countn,gene_markers,cells = which(meta$group == group), condition = meta$cluster, conditionList = conditionList)
+M <- dotplot(countn,genes = newMarkers,cells = which(meta$group == group), condition = meta$cluster, conditionList = conditionList, dot.scale = 1, aspect.ratio = 2, xSize = 5, ySize =5, title = "", xAngle = 270)
+```
+
+
+
+
+
+## Cell cycle
+
+Plot loadings for cell cycle factors
+
+```{r}
+samplePlots <- list()
+
+facsToPlot <- c("G2M", "S")
+  for(fac in facsToPlot){
+    p <- plotFactorGenes(factors,fac, nGenes = 30, ySize = 10, return = TRUE)
+    samplePlots[[fac]] <- p + theme(plot.margin=unit(rep(0.001,4), "cm")) + theme(panel.border = element_blank())
+  }
+grid.arrange(grobs = samplePlots,ncol = 2)
+
+```
+
+Plot cell factor scores segregated by inferred cell cycle phase.
+
+```{r}
+samplePlots <- list()
+for (fac in c("G2M", "S")){
+  p <- scBox(factors$H[fac,], groups = meta$CellCyclePhase,colours = cellCycleCols, width = 0.5, title = fac, return = T, xlabel = "none")  
+  p <- p + theme(axis.title.x = element_blank())
+  samplePlots[[fac]] <- p + theme(plot.margin=unit(rep(0.001,4), "cm")) + theme(panel.border = element_blank())
+}
+grid.arrange(grobs = samplePlots,ncol = 2)
+
+
+```
+
+UMAP projection with and without removal of cell cycle signature.
+
+```{r, warning=FALSE}
+p1 <- plotPoints(meta$x_uncorrected,meta$y_uncorrected,meta$CellCyclePhase,cellCycleCols, size = 0.05, return = T, title = "cell cycle included", lims = c(-15, 15, -15, 15))
+p2 <- plotPoints(meta$x,meta$y,meta$CellCyclePhase,cellCycleCols, size = 0.05, return = T, title= "cell cycle removed")
+grid.arrange(grobs = list(p1,p2),ncol = 2)
+```
+
+Cell cycle phases for selected cell types (abundance > 50)
+
+```{r}
+group <-  c("Tp63+ epidermal", "mesenchymal", "muscle")
+id <- annotation$id[which(annotation$group %in% group)]
+conditionList <- annotation$name[id][order(annotation$order[id], decreasing = F)]
+conditionList <- conditionList[which(table(meta$cluster)[match(conditionList,names(table(meta$cluster)))] > 50)]
+plotStackedBar(meta$CellCyclePhase,meta$cluster,conditionList,cellCycleCols, aspect.ratio = 0.3, title = "")
+```
+
+Cell cycle changes following amputation
+
+```{r}
+m <- which(meta$group == "mesenchymal" & !(meta$cluster_id %in% c(16,18,26,40)))
+p1 <- plotStackedBar(meta$CellCyclePhase[m],meta$val[m],all,cellCycleCols, "Mesenchyme", aspect.ratio = 3, return = T, width = 0.8)
+p1 <- p1 + theme(legend.position = "none") + theme(plot.margin=unit(rep(0.001,4), "cm")) 
+
+m <- which(meta$cluster_id %in% c(16,18,26,40))
+p2 <- plotStackedBar(meta$CellCyclePhase[m],meta$val[m],all,cellCycleCols, "Chondrogenic", aspect.ratio = 3, return = T, width = 0.8)
+p2 <- p2 + theme(legend.position = "none") + theme(plot.margin=unit(rep(0.001,4), "cm")) 
+
+m <- which(meta$group == "muscle")
+p3 <- plotStackedBar(meta$CellCyclePhase[m],meta$val[m],all,cellCycleCols, "Muscle", aspect.ratio = 3, return = T, width = 0.8)
+p3 <- p3+ theme(legend.position = "none") + theme(plot.margin=unit(rep(0.001,4), "cm")) 
+
+m <- which(meta$group == "Tp63+ epidermal")
+p4 <- plotStackedBar(meta$CellCyclePhase[m],meta$val[m],all,cellCycleCols, "Epidermal", aspect.ratio = 3, return = T, width = 0.8)
+p4 <- p4+ theme(legend.position = "none") + theme(plot.margin=unit(rep(0.001,4), "cm")) 
+
+grid.arrange(grobs = list(p1,p2,p3,p4),ncol = 4)
+```
+
+## Gene-set enrichment analysis and factor analysis
+
+scGSEA
+
+```{r, warning=FALSE}
+group <- c("Tp63+ epidermal","mesenchymal")
+id <- annotation$id[which(annotation$group %in% group)]
+conditionList <- annotation$name[id][order(annotation$order[id], decreasing = F)]
+cells <-  which(meta$group %in% group)
+ligands <- names(pathways)[1:5]
+inhibitors <- names(pathways)[12:13]
+targets <- names(pathways)[15:17]
+heatmapGeneric(log10(scores+1),features = ligands,cells = cells, condition = meta$cluster, norm = "minmax", conditionList = conditionList, aspect.ratio = 0.25, title = "scGSEA", xSize = 8)
+```
+
+Distal mesenchyme factor in Fibroblast 1.
+
+```{r}
+p <- scBox((factors$H["distal mesenchyme (sall4)",]), cells = which(meta$cluster == "Fibroblast 1"),groups = meta$val,colsAll, width = 0.5, title = paste0("Fibroblast 1"), xlabel = "sample", ylabel = "distal mesenchyme factor (sall4)", return = T)
+p <- p + theme(axis.text.x = element_blank())
+p
+```
+
+Gene expression trajectory in basal epidermis: we define a trajectory based on the AER factor and plot selected gene expressions along this trajectory. 
+
+```{r}
+cellsToConsider <- which(meta$group == "Tp63+ epidermal")
+aer_val <- factors$H["AER",cellsToConsider]
+nbins <- 20
+hvgAer <- countn[c("fgf8.L","lgr5.S", "tp63.L"),cellsToConsider[order(aer_val,decreasing = F)]]
+group <- paste0("T",as.numeric(cut(1:dim(hvgAer)[2],20)))
+group <- factor(group, ordered = TRUE, levels = paste0("T",1:20))
+M <- heatmap(hvgAer,condition = group, plot = F, return = T)
+orders <- order(apply(M,1,function(x) sum(x * (1:nbins)))/rowSums(M),decreasing = F)
+heatmap(hvgAer,genes = rownames(M)[orders],condition = group, aspect.ratio = 0.18, colhigh = "black", title = "")
+```
+
+
+```{r}
+sessionInfo()
+```

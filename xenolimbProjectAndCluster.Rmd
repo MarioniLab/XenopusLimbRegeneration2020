@@ -1,0 +1,157 @@
+---
+title: "projectAndCluster"
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  pdf_document: default
+---
+
+This code accompanies the paper "Xenopus limb regeneration is restricted by extrinsic cues inhibitory to specialised wound epidermis formation, Aztekin, Hiscock et al." (submitted). 
+
+## Import scripts, data and annotation
+
+Import scripts.
+
+```{r, include=FALSE}
+source("scripts.R")
+```
+
+Import data and annotation.
+
+```{r}
+counts <- readMM("countsMatrix.mtx")
+genes <- read.csv("genes.csv", header = F)$V1
+cells<- read.csv("cells.csv", header = F)$V1
+rownames(counts) <- genes
+colnames(counts) <- cells
+meta <- as.data.frame(read.csv("meta.csv"))
+labels <- as.data.frame(read.csv("labels.csv"))
+annotation <- as.data.frame(read.csv("annotation.csv"))
+load("supp.RData")
+```
+
+## Normalize and select HVGs
+
+We then normalize the data by library size, and select HVGs for projection and clustering based on mean expresion, and fano factor.
+
+```{r}
+meta$umi <- Matrix::colSums(counts)
+countn <- normalize(counts)
+hvg <- compute_hvg(countn, fano = 0.65)
+```
+
+## Projection
+
+We then project the data to two dimensions using UMAP. (Note, slightly different projections will be generated based on the choice of seed.)
+  
+```{r}
+meta <- umap_project(meta,hvg, neighbours = 15, dist = 0.2, seed = 12)
+plotMeta(meta)
+meta$x_uncorrected <- meta$x
+meta$y_uncorrected <- meta$y
+```
+
+## Assessment of batch effect
+
+```{r}
+for (sample in unique(meta$val)){
+  plotSample(meta,which(meta$val == sample), title = sample, mode = "batch", size = 0.5)
+}
+plotUMI(meta)
+```
+
+
+## Cell cycle analysis
+
+```{r}
+cc.genes <- read.csv('cellCycleOrthologs.txt',header=FALSE,sep='\t')
+cc.genes1<-sapply(tolower((cc.genes$V1)),function(x) paste0(x,".L"))
+cc.genes2<-sapply(tolower(cc.genes$V1),function(x) paste0(x,".S"))
+s.genes1 <- cc.genes1[1:42]
+g2m.genes1 <- cc.genes1[43:91]
+s.genes2 <- cc.genes2[1:42]
+g2m.genes2 <- cc.genes2[43:91]
+s.genes = c(s.genes1,s.genes2)
+g2m.genes = c(g2m.genes1,g2m.genes2)
+
+seuratHVG <- CreateSeuratObject(counts = countn)
+
+seuratHVG <- CellCycleScoring(object = seuratHVG, s.features = s.genes, g2m.features = g2m.genes,
+    set.ident = TRUE)
+
+meta$CellCyclePhase <- seuratHVG@meta.data[,6]
+rm(seuratHVG)
+
+plotMeta(meta,mode = "cycling")
+
+```
+
+
+## Remove cell cycle
+
+## Compute Factors
+
+```{r}
+factors <- computeNNMF(hvg, k = 30)
+```
+## Plot factors on UMAP
+
+```{r}
+for (i in 1:dim(factors$H)[1]){
+  plotArbitrary(meta,factors$H[i,],i)
+}
+```
+
+## Identify factors associated with cell cycle
+
+```{r}
+G2M <- 2
+S <- 5
+plot(factors$H[G2M,] ~ meta$CellCyclePhase)
+plot(factors$H[S,] ~ meta$CellCyclePhase)
+```
+
+
+## Remove genes associated with the cell cycle factors
+
+```{r}
+thresh <- 0.9
+H <- as(factors$H,"dgCMatrix")
+W <- as(factors$W,"dgCMatrix")
+H_ <- H[c(G2M,S),]
+W_ <- W[,c(G2M,S)]
+m <- which((W_[,1]<quantile(W_[,1],thresh)) & (W_[,2]<quantile(W_[,2],thresh)))
+dim(hvg)[1]
+length(m)
+```
+
+## Reproject
+
+```{r}
+hvg_ <- hvg[m,]
+meta_ <- umap_project(meta,hvg_, neighbours = 15, dist = 0.2, seed = 40)
+plotMeta(meta_, mode = "cycling")
+meta_ <- umap_cluster(meta_,hvg_,neighbours = 12, steps = 10, seed1 = 42, seed2 = 1)
+plotMeta(meta_,mode="cluster")
+HVGS <- rownames(hvg_)
+HVGS_uncorrected <- rownames(hvg)
+meta <- meta_
+```
+
+## scGSEA scores
+
+```{r}
+pathways <- as.list(read.table("pathways.csv", header = T, sep = ",", na.strings = ""))
+pathways <- (lapply(pathways, na.omit))
+pathways <- (lapply(pathways, paste0))
+set.seed(42)
+
+hvgSet <- which((rownames(countn) %in% HVGS) | (rownames(countn) %in% (unlist(pathways))))
+rankings <- AUCell_buildRankings(countn[hvgSet,], nCores=4, plotStats=T)
+scores <- getAUC(AUCell_calcAUC(pathways, rankings))
+```
+
+```{r}
+sessionInfo()
+```
