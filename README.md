@@ -2,7 +2,7 @@
 
 Instructions:
 
-1. Download (and unzip) counts matrix data from array express
+1. Download (and unzip) counts matrix data from array express: https://www.ebi.ac.uk/arrayexpress/files/E-MTAB-9104/E-MTAB-9104.processed.1.zip
 
 2. Download scripts and accompanying data from github
 
